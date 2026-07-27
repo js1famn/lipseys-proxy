@@ -2,8 +2,7 @@ const express = require('express');
 const app = express();
 
 app.use(express.json());
-app.use(express.text());
-app.use(express.raw({ type: '*/*' }));
+app.use(express.text({ type: '*/*' }));
 
 app.use(async (req, res) => {
   try {
@@ -17,15 +16,15 @@ app.use(async (req, res) => {
 
     let body = undefined;
     if (!['GET', 'HEAD'].includes(req.method)) {
-      if (req.body !== undefined && req.body !== null) {
-        body = typeof req.body === 'string' ? req.body
-             : Buffer.isBuffer(req.body) ? req.body
-             : JSON.stringify(req.body);
+      if (typeof req.body === 'object' && req.body !== null) {
+        body = JSON.stringify(req.body);
+        headers['content-type'] = 'application/json';
+      } else if (typeof req.body === 'string' && req.body.length > 0) {
+        body = req.body;
       }
     }
 
     const response = await fetch(targetUrl, { method: req.method, headers, body });
-
     console.log(`Response: ${response.status}`);
     const data = await response.text();
     res.status(response.status)
