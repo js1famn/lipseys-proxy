@@ -1,18 +1,18 @@
-const express = require('express');
-const app = express();
-
 app.use(express.json());
 app.use(express.text({ type: '*/*' }));
 
 app.use(async (req, res) => {
   try {
-    const targetUrl = `https://api.lipseys.com${req.path}${req.url.includes('?') ? '?' + req.url.split('?')[1] : ''}`;
+    const qs = req.url.includes('?') ? '?' + req.url.split('?').slice(1).join('?') : '';
+    const targetUrl = `https://api.lipseys.com${req.path}${qs}`;
     console.log(`Proxying: ${req.method} ${targetUrl}`);
 
-    const headers = {};
+    const headers = { 'accept': 'application/json' };
     if (req.headers['authorization']) headers['authorization'] = req.headers['authorization'];
     if (req.headers['content-type']) headers['content-type'] = req.headers['content-type'];
-    headers['accept'] = 'application/json';
+    // Forward token with correct casing (Lipsey's requires capital T)
+    const token = req.headers['token'] || req.headers['Token'];
+    if (token) headers['Token'] = token;
 
     let body = undefined;
     if (!['GET', 'HEAD'].includes(req.method)) {
@@ -26,6 +26,7 @@ app.use(async (req, res) => {
 
     const response = await fetch(targetUrl, { method: req.method, headers, body });
     console.log(`Response: ${response.status}`);
+
     const data = await response.text();
     res.status(response.status)
        .set('content-type', response.headers.get('content-type') || 'application/json')
