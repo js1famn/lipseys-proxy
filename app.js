@@ -1,6 +1,10 @@
 const express = require('express');
 const app = express();
 
+app.use(express.json());
+app.use(express.text());
+app.use(express.raw({ type: '*/*' }));
+
 app.use(async (req, res) => {
   try {
     const targetUrl = `https://api.lipseys.com${req.path}${req.url.includes('?') ? '?' + req.url.split('?')[1] : ''}`;
@@ -11,11 +15,16 @@ app.use(async (req, res) => {
     if (req.headers['content-type']) headers['content-type'] = req.headers['content-type'];
     headers['accept'] = 'application/json';
 
-    const response = await fetch(targetUrl, {
-      method: req.method,
-      headers,
-      body: ['GET', 'HEAD'].includes(req.method) ? undefined : JSON.stringify(req.body),
-    });
+    let body = undefined;
+    if (!['GET', 'HEAD'].includes(req.method)) {
+      if (req.body !== undefined && req.body !== null) {
+        body = typeof req.body === 'string' ? req.body
+             : Buffer.isBuffer(req.body) ? req.body
+             : JSON.stringify(req.body);
+      }
+    }
+
+    const response = await fetch(targetUrl, { method: req.method, headers, body });
 
     console.log(`Response: ${response.status}`);
     const data = await response.text();
