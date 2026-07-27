@@ -1,19 +1,39 @@
+// lipseys-proxy/app.js
+// Deploy to Render.com — proxies all requests to api.lipseys.com
+// Appends a crypto.randomUUID() nonce to every outbound URL so Cloudflare
+// never serves a cached auth response (fixes stale token bug).
+
+const express = require('express');
+const crypto  = require('crypto');
+const app     = express();
+
 app.use(express.json());
 app.use(express.text({ type: '*/*' }));
 
 app.use(async (req, res) => {
   try {
-    const qs = req.url.includes('?') ? '?' + req.url.split('?').slice(1).join('?') : '';
-    const targetUrl = `https://api.lipseys.com${req.path}${qs}`;
-    console.log(`Proxying: ${req.method} ${targetUrl}`);
+    // Build target URL with UUID nonce — Cloudflare caches by URL,
+    // so a URL it has never seen before always gets a fresh response.
+    const hasQs    = req.url.includes('?');
+    const existing = hasQs ? req.url.slice(req.url.indexOf('?') + 1) + '&' : '';
+    const targetUrl = `https://api.lipseys.com${req.path}?${existing}_n=${crypto.randomUUID()}`;
 
-    const headers = { 'accept': 'application/json' };
-    if (req.headers['authorization']) headers['authorization'] = req.headers['authorization'];
-    if (req.headers['content-type']) headers['content-type'] = req.headers['content-type'];
-    // Forward token with correct casing (Lipsey's requires capital T)
+    console.log(`[proxy] ${req.method} ${targetUrl}`);
+
+    // Forward relevant headers; always send cache-busting directives
+    const headers = {
+      'accept':        'application/json',
+      'cache-control': 'no-cache, no-store',
+      'pragma':        'no-cache',
+    };
+    if (req.headers['content-type']) {
+      headers['content-type'] = req.headers['content-type'];
+    }
+    // Lipsey's requires capital-T Token header
     const token = req.headers['token'] || req.headers['Token'];
     if (token) headers['Token'] = token;
 
+    // Build request body for non-GET methods
     let body = undefined;
     if (!['GET', 'HEAD'].includes(req.method)) {
       if (typeof req.body === 'object' && req.body !== null) {
@@ -25,16 +45,22 @@ app.use(async (req, res) => {
     }
 
     const response = await fetch(targetUrl, { method: req.method, headers, body });
-    console.log(`Response: ${response.status}`);
+    console.log(`[proxy] response ${response.status}`);
 
     const data = await response.text();
-    res.status(response.status)
-       .set('content-type', response.headers.get('content-type') || 'application/json')
-       .send(data);
+
+    // Strip caching headers on the way back so our server doesn't cache either
+    res
+      .status(response.status)
+      .set('content-type', response.headers.get('content-type') || 'application/json')
+      .set('cache-control', 'no-store')
+      .send(data);
+
   } catch (err) {
-    console.error('Proxy error:', err);
+    console.error('[proxy] error:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
-app.listen(process.env.PORT || 3000, () => console.log('Proxy running'));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`[proxy] running on port ${PORT}`));
