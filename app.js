@@ -10,6 +10,29 @@ const app     = express();
 app.use(express.json());
 app.use(express.text({ type: '*/*' }));
 
+
+// CSS image proxy — fetches images from media.chattanoogashooting.com
+// GoDaddy's server IP is blocked by that CDN; Render's US IP is not.
+app.get('/css-image', async (req, res) => {
+  const url = req.query.url;
+  if (!url || !url.startsWith('https://media.chattanoogashooting.com/')) {
+    return res.status(400).json({ error: 'Invalid or missing url parameter' });
+  }
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      return res.status(response.status).json({ error: 'Upstream fetch failed' });
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    res.set('Content-Type', response.headers.get('content-type') || 'image/jpeg');
+    res.set('Cache-Control', 'public, max-age=604800');
+    res.send(buffer);
+  } catch (err) {
+    console.error('[css-image] error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.use(async (req, res) => {
   try {
     // Build target URL with UUID nonce — Cloudflare caches by URL,
